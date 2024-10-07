@@ -1,0 +1,14 @@
+server:
+  port: 8080
+  pprof: false
+database:
+  dsn: postgres://flagforge:flagforge@localhost:15432/flagforge?sslmode=disable
+redis:
+  address: localhost:16379
+streaming:
+  heartbeat_interval: 15s
+outbox:
+  batch_size: 100
+  poll_interval: 500ms
+sdk:
+  snapshot_cache_ttl: 60s
