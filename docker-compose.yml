@@ -1,0 +1,71 @@
+name: flagforge
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flagforge
+      POSTGRES_USER: flagforge
+      POSTGRES_PASSWORD: flagforge
+    ports: ["127.0.0.1:${FLAGFORGE_POSTGRES_PORT:-15432}:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flagforge -d flagforge"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:${FLAGFORGE_REDIS_PORT:-16379}:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  server:
+    build: .
+    environment: &server-env
+      FLAGFORGE_DATABASE_DSN: postgres://flagforge:flagforge@postgres:5432/flagforge?sslmode=disable
+      FLAGFORGE_REDIS_ADDRESS: redis:6379
+      FLAGFORGE_ADMIN_TOKEN: ${FLAGFORGE_ADMIN_TOKEN:?Set FLAGFORGE_ADMIN_TOKEN to a random token of at least 24 characters}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:4318
+      FLAGFORGE_PPROF: "true"
+    ports: ["127.0.0.1:${FLAGFORGE_API_PORT:-18080}:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  server-b:
+    build: .
+    environment: *server-env
+    ports: ["127.0.0.1:${FLAGFORGE_API_B_PORT:-18082}:8080"]
+    profiles: ["multi"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+  example:
+    build: .
+    entrypoint: ["/usr/local/bin/example-service"]
+    environment:
+      FLAGFORGE_ENDPOINT: http://server:8080
+      FLAGFORGE_SDK_KEY: ${FLAGFORGE_SDK_KEY:-}
+    ports: ["127.0.0.1:${FLAGFORGE_EXAMPLE_PORT:-18081}:8081"]
+    profiles: ["demo"]
+    depends_on: [server]
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    volumes: ["./deployments/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["127.0.0.1:${FLAGFORGE_PROMETHEUS_PORT:-19090}:9090"]
+    profiles: ["observability"]
+  grafana:
+    image: grafana/grafana:11.6.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes: ["./deployments/grafana:/etc/grafana/provisioning:ro"]
+    ports: ["127.0.0.1:${FLAGFORGE_GRAFANA_PORT:-13000}:3000"]
+    profiles: ["observability"]
+  otel:
+    image: otel/opentelemetry-collector-contrib:0.122.1
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes: ["./deployments/otel.yaml:/etc/otel/config.yaml:ro"]
+volumes:
+  postgres-data:
