@@ -1,0 +1,11 @@
+# Security model
+
+API and SDK keys are cryptographically random with recognizable prefixes. PostgreSQL stores SHA-256 hashes; successful creation responses are the only place raw generated keys appear. Bootstrap admin key comes from configuration, requires 24 characters, and is inserted idempotently without unrevoking an existing record. Changing its configured value creates an additional admin credential; revoke old tokens explicitly.
+
+SDK keys are scoped by environment and accepted only under `/sdk/`. API tokens carry actor/role and are accepted only for management/profiling. Production protection is automatic. Token/key creation and revocation are audited without secrets. Rotate SDK keys by creating a new key, deploying it to clients while both work, then revoking the previous ID from the metadata-only key list. Revocation is immediate for snapshot requests and effective at the next SSE heartbeat for established streams. Cached SDK evaluation continues offline after revocation; it is not a remote erasure mechanism.
+
+All definition/lifecycle changes require Admin because they affect all environments. Developer can edit existing configs and segments in unprotected development/staging and create/cancel schedules there. Viewer has read-only access. Roles are deployment-wide; organization/project membership, approval workflows and tenant isolation are outside the implemented scope.
+
+Subject attributes remain in application memory. Analytics transmits only flag, variation, reason and timestamp; server uses receipt time for usage tracking. SDK buffers never block evaluation. Audit stores configuration before/after, so targeting lists themselves may contain subject identifiers; do not place unnecessary personal data in configuration.
+
+The Docker deployment binds published ports to loopback and uses development database credentials. A production operator must provide TLS termination, secret management, restricted PostgreSQL roles/networking and protected observability endpoints. Database triggers reject row updates/deletes in audit; privileged database owners can bypass triggers or truncate tables, so this is application-level immutable history rather than tamper-proof external storage.
