@@ -1,0 +1,50 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - run: go mod download
+      - run: test -z "$(gofmt -l $(find . -name '*.go'))"
+      - run: go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.5.0
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: go build ./cmd/...
+      - run: docker build -t flagforge:ci .
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flagforge
+          POSTGRES_PASSWORD: flagforge
+          POSTGRES_DB: flagforge
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U flagforge"
+          --health-interval 2s --health-timeout 2s --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 2s --health-retries 30
+    env:
+      INTEGRATION_DATABASE_DSN: postgres://flagforge:flagforge@localhost:5432/flagforge?sslmode=disable
+      INTEGRATION_REDIS_ADDRESS: localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+      - run: go test -race -tags=integration -timeout=5m -v ./tests/integration
